@@ -2,41 +2,36 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
 
 st.set_page_config(page_title="MSE Leaderboard", layout="centered")
-st.title("🏆 MSE Prediction Leaderboard")
+st.title("MSE Prediction Leaderboard")
 
-# Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-print(BASE_DIR)
 TARGET_PATH = os.path.join(BASE_DIR, "testing_target.csv")
 SCORES_PATH = os.path.join(BASE_DIR, "mse_scores.csv")
 
-# Load or init scores CSV
 def load_scores():
     if os.path.exists(SCORES_PATH):
         return pd.read_csv(SCORES_PATH)
-    else:
-        return pd.DataFrame(columns=["group", "filename", "prediction", "official_MSE"])
+    return pd.DataFrame(columns=["group", "filename", "prediction", "official_mse"])
 
 def save_scores(df):
     df.to_csv(SCORES_PATH, index=False)
 
-# Load target
 @st.cache_data
 def load_target():
     return pd.read_csv(TARGET_PATH)
 
-# ── Upload Form ──────────────────────────────────────────────────────────────
-st.subheader("📤 Submit Predictions")
+st.subheader("Submit Predictions")
 
 with st.form("submission_form"):
     group_name = st.text_input("Group Name")
-    prediction_MSE = st.number_input(
-        "Your MSE Estimate (0–1)", min_value=0.0, max_value=1.0, step=0.001, format="%.4f"
+    prediction_mse = st.number_input(
+        "Your MSE Estimate", min_value=0.0, step=0.001, format="%.4f"
     )
-    uploaded_file = st.file_uploader("Upload CSV (must contain a single numeric column: SalePrice)", type="csv")
+    uploaded_file = st.file_uploader(
+        "Upload CSV (must contain a single numeric column: SalePrice)", type="csv"
+    )
     submitted = st.form_submit_button("Submit")
 
 if submitted:
@@ -57,65 +52,76 @@ if submitted:
         try:
             user_df = pd.read_csv(uploaded_file)
 
-            # Validate format
             if list(user_df.columns) != ["SalePrice"]:
-                st.error("❌ Invalid file format. The CSV must contain exactly one column named 'SalePrice'.")
+                st.error("Invalid file format. The CSV must contain exactly one column named 'SalePrice'.")
             elif not pd.api.types.is_numeric_dtype(user_df["SalePrice"]):
-                st.error("❌ The 'SalePrice' column must be numeric.")
+                st.error("The 'SalePrice' column must be numeric.")
             else:
-                # Load target and compute MSE
                 try:
                     target_df = load_target()
                 except FileNotFoundError:
-                    st.error(f"❌ Target file not found at: {TARGET_PATH}")
+                    st.error(f"Target file not found at: {TARGET_PATH}")
                     st.stop()
 
                 if len(user_df) != len(target_df):
                     st.error(
-                        f"❌ Row count mismatch: your file has {len(user_df)} rows, "
+                        f"Row count mismatch: your file has {len(user_df)} rows, "
                         f"but the target has {len(target_df)} rows."
                     )
                 else:
-                    official_MSE = float(np.mean((user_df["SalePrice"].values - target_df["SalePrice"].values) ** 2))
+                    official_mse = float(
+                        np.mean((user_df["SalePrice"].values - target_df["SalePrice"].values) ** 2)
+                    )
 
-                    # Update scores
                     scores_df = load_scores()
                     new_row = pd.DataFrame([{
                         "group": group_name.strip(),
                         "filename": uploaded_file.name,
-                        "prediction": round(prediction_MSE, 4),
-                        "official_MSE": round(official_MSE, 6),
+                        "prediction": round(prediction_mse, 4),
+                        "official_mse": round(official_mse, 6),
                     }])
                     scores_df = pd.concat([scores_df, new_row], ignore_index=True)
                     save_scores(scores_df)
-
-                    st.success(
-                        f"✅ Submission recorded! Official MSE: **{official_MSE:.6f}** "
-                        f"(your estimate was {prediction_MSE:.4f})"
-                    )
                     st.cache_data.clear()
 
-        except Exception as ex:
-            st.error(f"❌ Error processing file: {ex}")
+                    st.success(
+                        f"Submission recorded! Official MSE: {official_mse:.6f} "
+                        f"(your estimate was {prediction_mse:.4f})"
+                    )
 
-# ── Leaderboard ───────────────────────────────────────────────────────────────
-st.subheader("📊 Leaderboard")
+        except Exception as ex:
+            st.error(f"Error processing file: {ex}")
+
+lb_col, flush_col = st.columns([3, 1])
+with lb_col:
+    st.subheader("Leaderboard")
+with flush_col:
+    st.write("")
+    if st.button("Flush Leaderboard", type="secondary", use_container_width=True):
+        save_scores(pd.DataFrame(columns=["group", "filename", "prediction", "official_mse"]))
+        st.cache_data.clear()
+        st.success("Leaderboard cleared.")
+        st.rerun()
 
 scores_df = load_scores()
-print(scores_df.head())
 
 if scores_df.empty:
     st.info("No submissions yet. Be the first to submit!")
 else:
     ranked = (
         scores_df
-        .sort_values("official_MSE", ascending=True)
+        .sort_values("official_mse", ascending=True)
         .reset_index(drop=True)
     )
-    ranked.index += 1  # 1-based rank
+    ranked.index += 1
     ranked.index.name = "Rank"
-    
+
+    def highlight_best(s):
+        styles = [""] * len(s)
+        styles[0] = "background-color: #d4edda; font-weight: bold"
+        return styles
+
     st.dataframe(
-        ranked,
+        ranked.style.apply(highlight_best, axis=0, subset=["official_mse"]),
         use_container_width=True,
     )
