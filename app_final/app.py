@@ -116,12 +116,7 @@ else:
     ranked.index += 1
     ranked.index.name = "Rank"
 
-    def highlight_best(s):
-        styles = [""] * len(s)
-        styles[0] = "background-color: #d4edda; font-weight: bold"
-        return styles
-
     st.dataframe(
-        ranked.style.apply(highlight_best, axis=0, subset=["official_mse"]),
+        ranked,
         use_container_width=True,
     )
